@@ -1,0 +1,173 @@
+diff --git a/src/hub/dataSources/HistoricalDataSource.ts b/src/hub/dataSources/HistoricalDataSource.ts
+--- a/src/hub/dataSources/HistoricalDataSource.ts
++++ b/src/hub/dataSources/HistoricalDataSource.ts
+@@ -58,7 +58,8 @@ export default class HistoricalDataSource {
+    * @param refreshCallback A callback to be triggered when a new set of data is available
+    * @param keyPrefix A prefix to append to all keys
+    */
+   openFile(
+     log: Log,
+     path: string,
+     keyPrefix: string,
+     statusCallback: (status: HistoricalDataSourceStatus) => void,
+     progressCallback: (progress: number) => void,
+-    refreshCallback: (hasNewFields: boolean) => void
++    refreshCallback: (hasNewFields: boolean) => void,
++    data: Uint8Array[] | null = null
+   ) {
+     this.log = log;
+     this.path = path;
+     this.keyPrefix = keyPrefix;
+     this.statusCallback = statusCallback;
+@@ -75,7 +76,13 @@ export default class HistoricalDataSource {
+       this.path = this.path.slice(0, -8) + "dslog";
+     }
+     this.setStatus(HistoricalDataSourceStatus.Reading);
+-    window.sendMainMessage("historical-start", { uuid: this.UUID, path: this.path });
++    if (data === null) {
++      window.sendMainMessage("historical-start", { uuid: this.UUID, path: this.path });
++    } else {
++      this.handleMainMessage({
++        uuid: this.UUID,
++        files: data,
++        error: null
++      });
++    }
+
+     // Update field request periodically
+     this.fieldRequestInterval = window.setInterval(() => this.updateFieldRequest(), 50);
+diff --git a/src/hub/hub.ts b/src/hub/hub.ts
+--- a/src/hub/hub.ts
++++ b/src/hub/hub.ts
+@@ -391,6 +391,91 @@ function startHistorical(path: string, clear = true, merge = false) {
+   );
+ }
++/** Opens a historical log from bytes that have already been downloaded by the browser. */
++function startHistoricalBytes(name: string, data: Uint8Array, clear = true) {
++  clear = clear || true;
++  let originalTimelineRange: null | [number, number] = null;
++  let originalTimelineIsMaxZoom: null | boolean = null;
++  if (clear) {
++    historicalSources.forEach((entry) => entry.source.stop());
++    historicalSources = [];
++    originalTimelineRange = window.selection.getTimelineRange();
++    originalTimelineIsMaxZoom = window.selection.getTimelineIsMaxZoom();
++    window.log = new Log();
++    window.sidebar.refresh();
++    window.tabs.refresh();
++  }
++  liveSource?.stop();
++  window.tuner = null;
++  liveActive = false;
++  liveConnected = false;
++  setLoading(null);
++
++  let updateLoading = () => {
++    if (historicalSources.every((entry) => entry.progress === null)) {
++      historicalSources.forEach((entry) => (entry.progressIncluded = false));
++    }
++    let totalProgress = 0;
++    let progressCount = 0;
++    historicalSources.forEach((entry) => {
++      if (!entry.progressIncluded) return;
++      totalProgress += entry.progress === null ? 1 : entry.progress;
++      progressCount++;
++    });
++    if (progressCount === 0) {
++      setLoading(null);
++    } else {
++      setLoading(totalProgress / progressCount);
++    }
++  };
++
++  let source = new HistoricalDataSource();
++  let sourceEntry = {
++    source: source,
++    path: name,
++    progress: 0,
++    progressIncluded: true
++  } as {
++    source: HistoricalDataSource;
++    path: string;
++    progress: number | null;
++    progressIncluded: boolean;
++  };
++  historicalSources.push(sourceEntry);
++  source.openFile(
++    window.log,
++    name,
++    "",
++    (status: HistoricalDataSourceStatus) => {
++      logFriendlyName = name;
++      switch (status) {
++        case HistoricalDataSourceStatus.Reading:
++        case HistoricalDataSourceStatus.DecodingInitial:
++          setWindowTitle(logFriendlyName, "Loading");
++          break;
++        case HistoricalDataSourceStatus.DecodingField:
++        case HistoricalDataSourceStatus.Idle:
++          setWindowTitle(logFriendlyName);
++          sourceEntry.progress = null;
++          updateLoading();
++          if (originalTimelineRange !== null && originalTimelineIsMaxZoom !== null) {
++            window.selection.setTimelineRange(originalTimelineRange, originalTimelineIsMaxZoom);
++            let newTimelineRange = window.selection.getTimelineRange();
++            if (window.selection.getTimelineIsMaxZoom() && originalTimelineRange[0] >= 0 && newTimelineRange[0] < 0) {
++              window.selection.setTimelineRange([0, newTimelineRange[1]], false);
++            }
++            originalTimelineRange = null;
++            originalTimelineIsMaxZoom = null;
++          }
++          break;
++        case HistoricalDataSourceStatus.Error:
++          setWindowTitle(logFriendlyName, "Error");
++          sourceEntry.progress = null;
++          updateLoading();
++          let isCSV = name.endsWith(".csv");
++          let message =
++            "There was a problem while reading the log file. " +
++            (isCSV
++              ? "Please check the documentation for more information on the required format of CSV files."
++              : "Please try again.");
++          if (source.getCustomError() !== null) {
++            message = source.getCustomError()!;
++          }
++          window.sendMainMessage("error", {
++            title: "Failed to open log",
++            content: message
++          });
++          break;
++        case HistoricalDataSourceStatus.Stopped:
++          break;
++      }
++    },
++    (progress: number) => {
++      sourceEntry.progress = progress;
++      updateLoading();
++    },
++    (hasNewFields: boolean) => {
++      window.sidebar.refresh();
++      if (hasNewFields) window.tabs.refresh();
++    },
++    [data]
++  );
++}
+ /**
+  * Connects to a live data source. */
+ function startLive(sourceType: "robot" | "sim" | "ds") {
+@@ -700,6 +785,16 @@ async function handleMainMessage(message: NamedMessage) {
+       }
+       break;
++    case "open-drive-file":
++      if (isExporting) {
++        window.sendMainMessage("error", {
++          title: "Cannot open file",
++          content: "Please wait for the export to finish, then try again."
++        });
++      } else {
++        startHistoricalBytes(message.data.name, message.data.data);
++      }
++      break;
+     case "open-files":
+       let files: string[] = message.data.files;
+       let merge: boolean = message.data.merge;

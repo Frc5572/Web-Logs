@@ -1,0 +1,212 @@
+diff --git a/src/main/lite/main.ts b/src/main/lite/main.ts
+--- a/src/main/lite/main.ts
++++ b/src/main/lite/main.ts
+@@ -43,6 +43,11 @@ let MENU_ANCHOR: HTMLElement;
+ let hubPort: MessagePort | null = null;
+ let popupMenu = new TinyPopupMenu();
+ let assetsPromise: Promise<AdvantageScopeAssets>;
+ let downloadInterval: number | null = null;
+ let popupRequiresForceClose = false;
++
++// These are public browser-side configuration values, not secrets.
++// Replace them with the OAuth client ID, API key, and Google Cloud project
++// number used by the hosted deployment.
++const GOOGLE_CLIENT_ID = "__GOOGLE_CLIENT_ID__";
++const GOOGLE_API_KEY = "__GOOGLE_API_KEY__";
++const GOOGLE_APP_ID = "__GOOGLE_APP_ID__";
++const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
++let googleAccessToken: string | null = null;
++let googleTokenClient: any = null;
++
++declare global {
++  interface Window {
++    gapi?: any;
++    google?: any;
++  }
++}
+@@ -180,44 +185,101 @@ function openPreferences() {
+     port.postMessage({ platform: "lite", prefs: prefs });
+   });
+ }
+-/** Opens a popup window for downloading logs. */
+-function openDownload() {
+-  openPopupWindow("www/download.html", [35, 65], "percent", (message, port) => {
+-    switch ((message as NamedMessage).name) {
+-      case "start":
+-        let path: string = message.data.path;
+-        let updateList = async () => {
+-          let response: Response;
+-          try {
+-            response = await fetch(`logs?folder=${encodeURIComponent(path)}`);
+-          } catch (e) {
+-            sendMessage(port, "show-error", "Fetch failed");
+-            return;
+-          }
+-          if (!response.ok) {
+-            if (response.status === 404) {
+-              sendMessage(port, "show-error", "No such file");
+-            } else {
+-              sendMessage(port, "show-error", response.statusText);
+-            }
+-          } else {
+-            sendMessage(port, "set-list", await response.json());
+-          }
+-        };
+-        updateList();
+-        downloadInterval = window.setInterval(() => updateList(), 3000);
+-        break;
+-      case "close":
+-        closePopupWindow();
+-        break;
+-
+-      case "save":
+-        closePopupWindow();
+-        sendMessage(hubPort, "open-files", { files: message.data, merge: false });
+-        break;
+-    }
+-  }).then((port) => {
+-    let prefs = DEFAULT_PREFS;
+-    let prefsRaw = localStorage.getItem(LocalStorageKeys.PREFS);
+-    if (prefsRaw !== null) mergePreferences(prefs, JSON.parse(prefsRaw));
+-    sendMessage(port, "set-platform", "lite");
+-    sendMessage(port, "set-preferences", prefs);
+-  });
++function loadExternalScript(src: string): Promise<void> {
++  return new Promise((resolve, reject) => {
++    const existing = document.querySelector(`script[src="${src}"]`);
++    if (existing !== null) {
++      if ((existing as HTMLScriptElement).dataset.loaded === "true") {
++        resolve();
++      } else {
++        existing.addEventListener("load", () => resolve(), { once: true });
++        existing.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
++      }
++      return;
++    }
++    const script = document.createElement("script");
++    script.src = src;
++    script.async = true;
++    script.onload = () => {
++      script.dataset.loaded = "true";
++      resolve();
++    };
++    script.onerror = () => reject(new Error(`Failed to load ${src}`));
++    document.head.appendChild(script);
++  });
++}
++
++async function getGoogleAccessToken(): Promise<string> {
++  await loadExternalScript("https://accounts.google.com/gsi/client");
++  await loadExternalScript("https://apis.google.com/js/api.js");
++  await new Promise<void>((resolve, reject) => {
++    window.gapi.load("picker", {
++      callback: resolve,
++      onerror: () => reject(new Error("Failed to load Google Picker"))
++    });
++  });
++
++  if (googleAccessToken !== null) {
++    return googleAccessToken;
++  }
++
++  return await new Promise<string>((resolve, reject) => {
++    const google = window.google;
++    if (google?.accounts?.oauth2 === undefined) {
++      reject(new Error("Google Identity Services is unavailable"));
++      return;
++    }
++
++    googleTokenClient = google.accounts.oauth2.initTokenClient({
++      client_id: GOOGLE_CLIENT_ID,
++      scope: GOOGLE_DRIVE_SCOPE,
++      callback: (response: any) => {
++        if (response.error !== undefined) {
++          reject(new Error(response.error_description ?? response.error));
++          return;
++        }
++        googleAccessToken = response.access_token;
++        resolve(response.access_token);
++      }
++    });
++    googleTokenClient.requestAccessToken({ prompt: "" });
++  });
++}
++
++async function downloadGoogleDriveFile(fileId: string, accessToken: string): Promise<Uint8Array> {
++  const response = await fetch(
++    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
++    {
++      headers: {
++        Authorization: `Bearer ${accessToken}`
++      }
++    }
++  );
++  if (!response.ok) {
++    throw new Error(`Google Drive download failed: ${response.status} ${response.statusText}`);
++  }
++  return new Uint8Array(await response.arrayBuffer());
++}
++
++/** Opens the Google Drive picker and loads the selected log directly into the hub. */
++async function openDownload() {
++  try {
++    const accessToken = await getGoogleAccessToken();
++    const google = window.google;
++    const picker = new google.picker.PickerBuilder()
++      .setDeveloperKey(GOOGLE_API_KEY)
++      .setAppId(GOOGLE_APP_ID)
++      .setOAuthToken(accessToken)
++      .setOrigin(window.location.protocol + "//" + window.location.host)
++      .addView(
++        new google.picker.DocsView(google.picker.ViewId.DOCS)
++          .setIncludeFolders(false)
++          .setEnableDrives(true)
++          .setSelectFolderEnabled(false)
++      )
++      .setCallback(async (data: any) => {
++        if (data.action !== google.picker.Action.PICKED) return;
++        const selected = data.docs?.[0];
++        if (selected === undefined) return;
++
++        try {
++          const bytes = await downloadGoogleDriveFile(selected.id, accessToken);
++          sendMessage(hubPort, "open-drive-file", {
++            name: selected.name,
++            data: bytes
++          });
++        } catch (error) {
++          window.alert(error instanceof Error ? error.message : "Failed to download the Google Drive file.");
++        }
++      })
++      .build();
++    picker.setVisible(true);
++  } catch (error) {
++    window.alert(error instanceof Error ? error.message : "Unable to open Google Drive.");
++  }
+ }
+@@ -330,23 +392,6 @@ async function handleHubMessage(message: NamedMessage) {
+       }
+       break;
+-    case "historical-start":
+-      {
+-        const uuid: string = message.data.uuid;
+-        const path: string = message.data.path;
+-
+-        let prefs = DEFAULT_PREFS;
+-        let prefsRaw = localStorage.getItem(LocalStorageKeys.PREFS);
+-        if (prefsRaw !== null) mergePreferences(prefs, JSON.parse(prefsRaw));
+-        let response = await fetch(`logs/${encodeURIComponent(path)}?folder=${encodeURIComponent(prefs.remotePath)}`);
+-        let buffer = await response.arrayBuffer();
+-        let array = new Uint8Array(buffer);
+-
+-        sendMessage(hubPort, "historical-data", {
+-          files: [array],
+-          error: null,
+-          uuid: uuid
+-        });
+-      }
+-      break;
+-
+     case "open-link":
+       window.open(message.data, "_blank");
+       break;

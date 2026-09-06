@@ -1,0 +1,236 @@
+name: Build AdvantageScope Lite
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  EMSCRIPTEN_VERSION: "4.0.12"
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout configuration
+        uses: actions/checkout@v6
+
+      - name: Read upstream version
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          source upstream/advantagescope.env
+
+          echo "repo=${ADVANTAGESCOPE_REPO}" >> "$GITHUB_OUTPUT"
+          echo "ref=${ADVANTAGESCOPE_REF}" >> "$GITHUB_OUTPUT"
+
+          echo "Using AdvantageScope:"
+          echo "  Repository: ${ADVANTAGESCOPE_REPO}"
+          echo "  Commit:     ${ADVANTAGESCOPE_REF}"
+
+      - name: Validate upstream commit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${{ steps.upstream.outputs.ref }}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::ADVANTAGESCOPE_REF must be a 40-character commit SHA"
+            exit 1
+          fi
+
+      - name: Clone AdvantageScope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git clone \
+            --no-checkout \
+            "${{ steps.upstream.outputs.repo }}" \
+            advantagescope
+
+          cd advantagescope
+
+          git fetch \
+            --depth=1 \
+            origin \
+            "${{ steps.upstream.outputs.ref }}"
+
+          git checkout \
+            --detach \
+            "${{ steps.upstream.outputs.ref }}"
+
+      - name: Verify upstream commit
+        working-directory: advantagescope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ACTUAL="$(git rev-parse HEAD)"
+          EXPECTED="${{ steps.upstream.outputs.ref }}"
+
+          if [[ "$ACTUAL" != "$EXPECTED" ]]; then
+            echo "::error::Checked out commit does not match requested commit"
+            echo "Expected: $EXPECTED"
+            echo "Actual:   $ACTUAL"
+            exit 1
+          fi
+
+      - name: Apply AdvantageScope patches
+        working-directory: advantagescope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for patch in ../patches/*.patch; do
+            echo "========================================"
+            echo "Applying $patch"
+            echo "========================================"
+
+            git apply \
+              --check \
+              "$patch"
+
+            git apply \
+              --verbose \
+              "$patch"
+          done
+
+      - name: Show patched revision
+        working-directory: advantagescope
+        shell: bash
+        run: |
+          git status --short
+          git diff --stat
+      - name: Configure Google Drive
+        working-directory: advantagescope
+        env:
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY }}
+          GOOGLE_APP_ID: ${{ vars.GOOGLE_APP_ID }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          path = Path("src/main/lite/main.ts")
+          text = path.read_text()
+
+          replacements = {
+              "__GOOGLE_CLIENT_ID__": os.environ["GOOGLE_CLIENT_ID"],
+              "__GOOGLE_API_KEY__": os.environ["GOOGLE_API_KEY"],
+              "__GOOGLE_APP_ID__": os.environ["GOOGLE_APP_ID"],
+          }
+
+          for old, new in replacements.items():
+              text = text.replace(old, new)
+
+          path.write_text(text)
+          PY
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: advantagescope/package-lock.json
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSCRIPTEN_VERSION }}
+          actions-cache-folder: emsdk-cache
+
+      - name: Verify toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node --version
+          npm --version
+          emcc --version
+
+      - name: Install dependencies
+        working-directory: advantagescope
+        env:
+          ASCOPE_DISTRIBUTION: LITE
+        run: npm ci
+
+      - name: Compile AdvantageScope
+        working-directory: advantagescope
+        env:
+          ASCOPE_DISTRIBUTION: LITE
+        run: npm run compile
+
+      - name: Compile WebAssembly
+        working-directory: advantagescope
+        env:
+          ASCOPE_DISTRIBUTION: LITE
+        run: npm run wasm:compile
+
+      - name: Build embedded documentation
+        working-directory: advantagescope
+        env:
+          ASCOPE_DISTRIBUTION: LITE
+        run: npm run docs:build-embed
+
+      - name: Verify Lite output
+        working-directory: advantagescope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -d lite/static
+          test -f lite/static/bundles/main.js
+          test -f lite/static/bundles/hub.js
+          test -f lite/static/bundles/wpilogWorker.js
+          test -f lite/static/bundles/wpilogIndexer.js
+          test -f lite/static/bundles/wpilogIndexer.wasm
+
+          echo "Lite output:"
+          find lite/static -maxdepth 2 -type f | sort
+
+      - name: Configure GitHub Pages
+        # if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        # if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: advantagescope/lite/static
+
+  deploy:
+    name: Deploy
+    # if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    permissions:
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

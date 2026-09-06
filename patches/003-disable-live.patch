@@ -1,0 +1,60 @@
+diff --git a/src/hub/hub.ts b/src/hub/hub.ts
+--- a/src/hub/hub.ts
++++ b/src/hub/hub.ts
+@@ -268,12 +268,9 @@ window.requestAnimationFrame(periodic);
+ // DATA SOURCE HANDLING
+
+ function checkLiveAutoStart() {
+-  if (IS_LITE && window.preferences !== null && !liveAutoStartComplete) {
+-    startLive(DISTRIBUTION === Distribution.LiteDS ? "ds" : "robot");
+-    liveAutoStartComplete = true;
+-  }
++  // The hosted build is historical-log-only. Never auto-connect to a live source.
++  liveAutoStartComplete = true;
+ }
+@@ -723,10 +720,10 @@ async function handleMainMessage(message: NamedMessage) {
+       }
+       break;
+     case "start-live":
+-      if (isExporting) {
+-        window.sendMainMessage("error", {
+-          title: "Cannot connect",
+-          content: "Please wait for the export to finish, then try again."
+-        });
+-      } else {
+-        startLive(message.data);
+-      }
++      window.sendMainMessage("error", {
++        title: "Live mode disabled",
++        content: "This hosted AdvantageScope build only supports historical log files."
++      });
+       break;
+diff --git a/src/main/lite/main.ts b/src/main/lite/main.ts
+--- a/src/main/lite/main.ts
++++ b/src/main/lite/main.ts
+@@ -410,12 +410,6 @@ async function handleHubMessage(message: NamedMessage) {
+                 content: `Open Log (\u21e7 ${modifier} O)`,
+                 callback() {
+                   openDownload();
+                 }
+               },
+-              {
+-                content: `Connect Live (${modifier} K)`,
+-                callback() {
+-                  sendMessage(hubPort, "start-live", DISTRIBUTION === Distribution.LiteDS ? "ds" : "robot");
+-                }
+-              },
+               ...(DISTRIBUTION === Distribution.LiteDS
+                 ? []
+                 : [
+@@ -1172,8 +1166,6 @@ function processKeydown(event: KeyboardEvent): boolean {
+   let triggered = true;
+   let modifier = event.metaKey || event.ctrlKey;
+   let lowerKey = event.key.toLowerCase();
+   if (event.shiftKey && modifier && lowerKey === "o") {
+     openDownload();
+-  } else if (!event.shiftKey && modifier && lowerKey === "k") {
+-    sendMessage(hubPort, "start-live", false);
+   } else if (!event.shiftKey && modifier && lowerKey === "\\") {
+     sendMessage(hubPort, "zoom-enabled");
+   } else if (!event.shiftKey && modifier && lowerKey === ".") {
