@@ -93,57 +93,57 @@ jobs:
             exit 1
           fi
 
-      - name: Apply AdvantageScope patches
-        working-directory: advantagescope
-        shell: bash
-        run: |
-          set -euo pipefail
+      # - name: Apply AdvantageScope patches
+      #   working-directory: advantagescope
+      #   shell: bash
+      #   run: |
+      #     set -euo pipefail
 
-          for patch in ../patches/*.patch; do
-            echo "========================================"
-            echo "Applying $patch"
-            echo "========================================"
+      #     for patch in ../patches/*.patch; do
+      #       echo "========================================"
+      #       echo "Applying $patch"
+      #       echo "========================================"
 
-            git apply \
-              --check \
-              "$patch"
+      #       git apply \
+      #         --check \
+      #         "$patch"
 
-            git apply \
-              --verbose \
-              "$patch"
-          done
+      #       git apply \
+      #         --verbose \
+      #         "$patch"
+      #     done
 
-      - name: Show patched revision
-        working-directory: advantagescope
-        shell: bash
-        run: |
-          git status --short
-          git diff --stat
-      - name: Configure Google Drive
-        working-directory: advantagescope
-        env:
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY }}
-          GOOGLE_APP_ID: ${{ vars.GOOGLE_APP_ID }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
+      # - name: Show patched revision
+      #   working-directory: advantagescope
+      #   shell: bash
+      #   run: |
+      #     git status --short
+      #     git diff --stat
+      # - name: Configure Google Drive
+      #   working-directory: advantagescope
+      #   env:
+      #     GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+      #     GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY }}
+      #     GOOGLE_APP_ID: ${{ vars.GOOGLE_APP_ID }}
+      #   run: |
+      #     python3 - <<'PY'
+      #     from pathlib import Path
+      #     import os
 
-          path = Path("src/main/lite/main.ts")
-          text = path.read_text()
+      #     path = Path("src/main/lite/main.ts")
+      #     text = path.read_text()
 
-          replacements = {
-              "__GOOGLE_CLIENT_ID__": os.environ["GOOGLE_CLIENT_ID"],
-              "__GOOGLE_API_KEY__": os.environ["GOOGLE_API_KEY"],
-              "__GOOGLE_APP_ID__": os.environ["GOOGLE_APP_ID"],
-          }
+      #     replacements = {
+      #         "__GOOGLE_CLIENT_ID__": os.environ["GOOGLE_CLIENT_ID"],
+      #         "__GOOGLE_API_KEY__": os.environ["GOOGLE_API_KEY"],
+      #         "__GOOGLE_APP_ID__": os.environ["GOOGLE_APP_ID"],
+      #     }
 
-          for old, new in replacements.items():
-              text = text.replace(old, new)
+      #     for old, new in replacements.items():
+      #         text = text.replace(old, new)
 
-          path.write_text(text)
-          PY
+      #     path.write_text(text)
+      #     PY
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
