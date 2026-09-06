@@ -1,7 +1,7 @@
 diff --git a/src/main/lite/main.ts b/src/main/lite/main.ts
 --- a/src/main/lite/main.ts
 +++ b/src/main/lite/main.ts
-@@ -43,6 +43,11 @@ let MENU_ANCHOR: HTMLElement;
+@@ -43,5 +43,22 @@ let MENU_ANCHOR: HTMLElement;
  let hubPort: MessagePort | null = null;
  let popupMenu = new TinyPopupMenu();
  let assetsPromise: Promise<AdvantageScopeAssets>;
@@ -24,7 +24,7 @@ diff --git a/src/main/lite/main.ts b/src/main/lite/main.ts
 +    google?: any;
 +  }
 +}
-@@ -180,44 +185,101 @@ function openPreferences() {
+@@ -180,47 +197,116 @@ function openPreferences() {
      port.postMessage({ platform: "lite", prefs: prefs });
    });
  }
@@ -184,7 +184,7 @@ diff --git a/src/main/lite/main.ts b/src/main/lite/main.ts
 +    window.alert(error instanceof Error ? error.message : "Unable to open Google Drive.");
 +  }
  }
-@@ -330,23 +392,6 @@ async function handleHubMessage(message: NamedMessage) {
+@@ -330,25 +416,5 @@ async function handleHubMessage(message: NamedMessage) {
        }
        break;
 -    case "historical-start":
