@@ -203,7 +203,7 @@ jobs:
       # Step 1: Deploy Preview for Pull Requests
       - name: Deploy Preview to Cloudflare
         if: github.event_name == 'pull_request'
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -214,7 +214,7 @@ jobs:
       # Step 2: Deploy to Production for pushes to Main
       - name: Deploy Production to Cloudflare
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
