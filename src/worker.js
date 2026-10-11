@@ -32,6 +32,13 @@ export default {
         },
       });
     }
+    // Return the generated bundled asset manifest.
+    if (url.pathname === "/logs" || url.pathname === "/logs/") {
+      return Response.json(
+        [],
+        { status: 404 }
+      );
+    }
 
     // Map /assets/<path> to /bundledAssets/<path>.
     if (url.pathname.startsWith("/assets/")) {
