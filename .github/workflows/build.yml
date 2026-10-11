@@ -195,16 +195,13 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout configuration
+        uses: actions/checkout@v6
       - name: Download deployment assets
         uses: actions/download-artifact@v4
         with:
           name: worker-data
           path: worker-assets/   # Extracted contents will go here
-      - name: Test
-        shell: bash
-        run: |
-          pwd
-          ls -lah
       # Step 1: Deploy Preview for Pull Requests
       - name: Deploy Preview to Cloudflare
         if: github.event_name == 'pull_request'
