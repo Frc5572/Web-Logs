@@ -179,9 +179,15 @@ jobs:
           ASCOPE_DISTRIBUTION: LITE
         run: npm run docs:build-embed
 
-      - name: Verify Lite output
+      - name: Create Deployment Package
         shell: bash
         run: node scripts/build-manifest.mjs
+
+      - name: Upload Deployment artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-data  # Unique name for the artifact
+          path: ./worker-assets/  # File or directory path to upload
 
   deploy:
     name: Deploy
@@ -189,10 +195,37 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy Worker and bundled frontend
+      - name: Download deployment assets
+        uses: actions/download-artifact@v4
+        with:
+          name: worker-data
+          path: worker-assets/   # Extracted contents will go here
+      # Step 1: Deploy Preview for Pull Requests
+      - name: Deploy Preview to Cloudflare
+        if: github.event_name == 'pull_request'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: worker-assets
+          # The command flag creates a preview deployment tied to the PR lifecycle
+          workingDirectory: ./worker-assets
+          command: preview --name pr-${{ github.event.number || github.ref_name }}
+
+      # Step 2: Deploy to Production for pushes to Main
+      - name: Deploy Production to Cloudflare
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: ./worker-assets
+          # Standard deploy command pushes directly to production
           command: deploy
+
+      # - name: Deploy Worker and bundled frontend
+      #   uses: cloudflare/wrangler-action@v3
+      #   with:
+      #     apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      #     accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      #     workingDirectory: ./worker-assets
+      #     command: deploy
