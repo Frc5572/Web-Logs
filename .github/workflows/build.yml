@@ -208,8 +208,8 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # The command flag creates a preview deployment tied to the PR lifecycle
-          workingDirectory: ./worker-assets
-          command: preview --name pr-${{ github.event.number || github.ref_name }}
+          # workingDirectory: ./worker-assets
+          command: preview --name pr-${{ github.event.pull_request.number }}
 
       # Step 2: Deploy to Production for pushes to Main
       - name: Deploy Production to Cloudflare
@@ -218,7 +218,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: ./worker-assets
+          # workingDirectory: ./worker-assets
           # Standard deploy command pushes directly to production
           command: deploy
 
