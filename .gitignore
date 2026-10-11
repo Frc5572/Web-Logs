@@ -1,0 +1,7 @@
+venv/
+.venv/
+/test/
+advantagescope/
+node_modules/
+worker-assets/
+.wrangler/

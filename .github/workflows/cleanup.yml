@@ -1,0 +1,20 @@
+name: Delete Preview on PR Close
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Delete Wrangler Preview
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Assumes your preview names follow a convention like 'pr-<number>'
+          command: preview delete --name pr-${{ github.event.pull_request.number }} --skip-confirmation

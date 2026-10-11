@@ -1,0 +1,19 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+name = "winter-salad-59f4"
+main = "src/worker.js"
+# Set this to today's date
+compatibility_date = "2026-10-11"
+workers_dev = false
+previews = { }
+preview_urls = true
+
+[route]
+pattern = "logs.frc5572.org/*"
+zone_name = "frc5572.org"
+
+[assets]
+directory = "./worker-assets"
+binding = "ASSETS"
+run_worker_first = true
+not_found_handling = "single-page-application"
+
