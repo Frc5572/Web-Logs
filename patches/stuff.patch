@@ -178,7 +178,7 @@ index deb472c2..4531d16a 100644
 +}
 \ No newline at end of file
 diff --git a/src/main/lite/main.ts b/src/main/lite/main.ts
-index fab596f5..33997930 100644
+index fab596f5..361f6771 100644
 --- a/src/main/lite/main.ts
 +++ b/src/main/lite/main.ts
 @@ -374,7 +374,9 @@ async function handleHubMessage(message: NamedMessage) {
@@ -353,7 +353,7 @@ index fab596f5..33997930 100644
 +      .setDeveloperKey(GOOGLE_API_KEY)
 +      .setAppId(GOOGLE_APP_ID)
 +      .setOAuthToken(accessToken)
-+      .setOrigin(window.location.protocol + "//" + window.location.host)
++      .setOrigin(window.location.origin)
 +      .addView(
 +        new google.picker.DocsView(google.picker.ViewId.DOCS)
 +          .setIncludeFolders(true)
