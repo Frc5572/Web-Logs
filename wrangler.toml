@@ -1,5 +1,5 @@
 "$schema" = "./node_modules/wrangler/config-schema.json"
-name = "winter-salad-59f4"
+name = "web-logs-viewer"
 main = "src/worker.js"
 # Set this to today's date
 compatibility_date = "2026-10-11"
